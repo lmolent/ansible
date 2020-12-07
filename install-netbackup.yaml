@@ -1,0 +1,187 @@
+#!/srv/ansible_2.2/bin/ansible-playbook
+
+- hosts: all
+  become: yes
+  vars:
+    master_server: ""
+    license_key: ""
+    authorization_token: ""
+  environment:
+    http_proxy: http://localhost:3128
+    https_proxy: http://localhost:3128
+
+  tasks:
+    - file: 
+        path: "/opt/openv"
+        state: directory
+    - file: 
+        src: "/opt/openv"
+        path: "/usr/openv"
+        state: link
+        force: yes
+    - package:
+        name: expect
+        state: present
+    - name: Identify the space available in "{{ tmp | default('/var/tmp/') }}"
+      shell: df -kP "{{ tmp | default('/var/tmp/') }}" | awk '!/Filesystem/ { print $4}'
+      changed_when: false
+      check_mode: no
+      register: var_space_available
+
+    - name: Fail when disk can not be found
+      debug:
+        msg: Not enough space available in "{{ tmp | default('/var/tmp/') }}" - only {{ var_space_available.stdout | int / 1024 }} MB
+      when: var_space_available.stdout | int < 6*1024*1024
+
+    - name: Identify the space available in /usr/openv
+      shell: df -kP /usr/openv/ | awk '!/Filesystem/ { print $4}'
+      changed_when: false
+      check_mode: no
+      register: openv_space_available
+
+    - name: Fail when disk can not be found
+      debug:
+        msg: Not enough space available in /usr/openv/ - only {{ openv_space_available.stdout | int / 1024 }} MB
+      when: openv_space_available.stdout | int < 6*1024*1024
+    - debug:
+        msg: "Install directory {{ tmp | default('/var/tmp/') }}/nbu/{{ nbutar.split('.tar.gz')[0] | basename }}"
+
+    - file: 
+        path: "{{ tmp | default('/var/tmp/') }}/nbu" 
+        state: directory
+    - synchronize: 
+        src: "{{ nbutar }}"
+        dest: "{{ tmp | default('/var/tmp/') }}/nbu"
+    - command: "/bin/tar xzf {{ nbutar | basename }}"
+      args:
+        chdir: "{{ tmp | default('/var/tmp/') }}/nbu"
+    - name: Install                                                                                                                                                                                             
+      shell: |                                                                                                                                                                                                  
+        set timeout -1
+        log_file /tmp/nbexpect.log
+        spawn ./install                                                                                                                                                                                         
+        expect {      
+          "Do you wish to continue" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+
+          "Do you want to reinstall NetBackup and Media Manager" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+
+          "Do you want to install the NetBackup client software for this client" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+
+          "Is this correct" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+
+          "Would you like to use" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+
+          "Do you still want to terminate all processes" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+
+          "Do you want this script to attempt to kill them" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+
+          "with the current active NetBackup license key" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+
+          "Do you want to add additional license keys now" {
+            sleep 1
+            send "n\n"
+            exp_continue                       
+            }      
+          "Is this host the master server" {
+            sleep 1
+            send "n\n"
+            exp_continue                       
+            }      
+          "NetBackup server name of this machine" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+          "What is the fully qualified name of the master server" {
+            sleep 1
+            send "{{ master_server }}\n"
+            exp_continue                       
+            }      
+          "Enter the name of the NetBackup master server" {
+            sleep 1
+            send "{{ master_server }}\n"
+            exp_continue                       
+            }      
+          "Do you want to install NetBackup and Media Manager files" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+          "Do you want to upgrade NetBackup and Media Manager" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+          "Java GUI and JRE option" {
+            sleep 1
+            send "2\n"
+            exp_continue                       
+            }      
+          "Enter the authorization token" {
+            sleep 1
+            send "{{ authorization_token }}\n"
+            exp_continue                       
+            }      
+          "Would you like to try again using a different authorization token" {
+            sleep 1
+            send "y\n"
+            exp_continue                       
+            }      
+          "Enter license key" {
+            sleep 1
+            send "{{ license_key }}\n"
+            exp_continue                       
+            }      
+          "That file can be deleted after you are sure the install was successful" {
+            sleep 1
+            exp_close
+            }      
+          }
+      args:
+        executable: expect
+        chdir: "{{ tmp | default('/var/tmp/') }}/nbu/{{ nbutar.split('.tar.gz')[0] | basename }}"
+      tags: install
+
+    - command: "tail /tmp/nbexpect.log"
+      register: log
+    - debug:
+        var: log
+    - name: Cleanup
+      file: 
+        path: "{{ tmp | default('/var/tmp/') }}/nbu" 
+        state: absent
+
+
+# vim: expandtab:ts=2:sw=2:smartindent
